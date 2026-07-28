@@ -57,6 +57,7 @@ Roles dashboard: `user.role` enum `super_admin/admin/user`; `user.status` enum `
 - **Drizzle-kit push + TTY:** rename ambíguo de coluna falha sem TTY. Em dev, dropar+recriar schema é o caminho mais previsível.
 - **`db.execute()` raw devolve timestamp como string** (drizzle 0.45.x bug). Coercer com `toDate` de `@emach/db/utils` no boundary. Detalhes em `packages/db/CLAUDE.md`.
 - **IDs:** `crypto.randomUUID()` no caller (server actions/scripts) — sem nanoid.
+- **Deploy Vercel (incidente 2026-07-28):** funções DEVEM rodar em `gru1` (`"regions": ["gru1"]` no `apps/web/vercel.json`) — no default `iad1` cada query ao Supabase sa-east-1 paga ~140ms e a navegação RSC chega a 1,9s. **O mirror pro repo de deploy está quebrado**: o secret `MIRROR_TOKEN` está vazio e o workflow `mirror.yml` "passa" com warning sem pushar — merge na main NÃO chega em produção sozinho (fix: PAT fine-grained da conta `emach-ferramentas` com write no repo espelho + `gh secret set MIRROR_TOKEN`). Deploy manual: `npx vercel deploy --prod` (projeto `emach-dashboard`, scope `emach-s-projects`) — exige o `.vercelignore` da raiz (limite Vercel de 100MB/arquivo; caches `.next`/`.turbo` estouram) e pode falhar no `prepare` do lefthook (`bun install` sem `.git` → exit 128; visto num build de 2026-07-28).
 
 ## Smoke run-time
 
