@@ -5,6 +5,7 @@ import { getUserBranchScope } from "@/lib/branch-scope";
 import { logger } from "@/lib/logger";
 import { requireCapability } from "@/lib/permissions";
 import { registerPdfFonts } from "../picking-list/_lib/fonts";
+import { cepBarcodeDataUri } from "./_lib/barcode";
 import { fetchShippingDocOrders } from "./_lib/data";
 import { resolveShippingDocParams } from "./_lib/resolve-params";
 import {
@@ -27,16 +28,26 @@ export async function GET(req: Request) {
 
 		registerPdfFonts();
 		const generatedAt = new Date();
-		const operatorName = session.user.name ?? session.user.email ?? "—";
+
+		const barcodeEntries = await Promise.all(
+			orders.map(async (o) => {
+				const uri = await cepBarcodeDataUri(o.recipient.zipCode).catch(
+					(err) => {
+						logger.error("shipping_doc.barcode", { orderId: o.id, err });
+						return null;
+					}
+				);
+				return uri ? ([o.id, uri] as const) : null;
+			})
+		);
+		const cepBarcodes = Object.fromEntries(
+			barcodeEntries.filter((e): e is readonly [string, string] => e !== null)
+		);
 
 		const doc =
 			orders.length === 0
-				? createElement(EmptyShippingDocDocument, { generatedAt })
-				: createElement(ShippingDocDocument, {
-						generatedAt,
-						operatorName,
-						orders,
-					});
+				? createElement(EmptyShippingDocDocument)
+				: createElement(ShippingDocDocument, { cepBarcodes, orders });
 
 		const buffer = await renderToBuffer(
 			doc as Parameters<typeof renderToBuffer>[0]
@@ -49,7 +60,7 @@ export async function GET(req: Request) {
 		return new Response(new Uint8Array(buffer), {
 			headers: {
 				"Cache-Control": "no-store",
-				"Content-Disposition": `inline; filename="dados-envio-${generatedAt.getTime()}.pdf"`,
+				"Content-Disposition": `inline; filename="etiqueta-envio-${generatedAt.getTime()}.pdf"`,
 				"Content-Type": "application/pdf",
 			},
 		});

@@ -213,19 +213,13 @@ describe("updateOrderStatusSchema — regra: reason obrigatório", () => {
 		});
 	});
 
-	describe("regra: trackingCode obrigatório para shipped", () => {
-		it("shipped sem trackingCode → inválido com issue em 'trackingCode'", () => {
+	describe("regra: trackingCode opcional para shipped (spec D3)", () => {
+		it("shipped sem trackingCode → válido (código chega depois do envio, via posto dos Correios)", () => {
 			const result = updateOrderStatusSchema.safeParse({
 				orderId: VALID_ORDER_ID,
 				toStatus: "shipped",
 			});
-			expect(result.success).toBe(false);
-			if (!result.success) {
-				const issue = result.error.issues.find(
-					(i) => i.path[0] === "trackingCode"
-				);
-				expect(issue).toBeDefined();
-			}
+			expect(result.success).toBe(true);
 		});
 
 		it("shipped com trackingCode → válido", () => {
