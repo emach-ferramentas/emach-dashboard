@@ -31,6 +31,7 @@ import {
 } from "./_components/tool-schema";
 import { resolveVariantDeletion } from "./_components/variant-deletion";
 import { deleteToolVideoObject } from "./_components/video-actions";
+import { resolveToolDeletion } from "./_lib/tool-deletion";
 import {
 	attributeValueRow,
 	normalizeToolPayload,
@@ -39,6 +40,7 @@ import {
 import {
 	currentPrimaryCategoryId,
 	fetchDefinitionsBySlug,
+	fetchToolDeletionFacts,
 	fetchToolsPage,
 	primaryCategoryIncompleteError,
 	type ToolsFiltersInput,
@@ -495,17 +497,9 @@ export async function deleteTool(id: string): Promise<ActionResult> {
 		.from(tool)
 		.where(eq(tool.id, id));
 
-	const [orderedForTool] = await db
-		.select({ n: sql<number>`count(*)::int` })
-		.from(orderItem)
-		.innerJoin(toolVariant, eq(toolVariant.id, orderItem.variantId))
-		.where(eq(toolVariant.toolId, id));
-	if ((orderedForTool?.n ?? 0) > 0) {
-		return {
-			ok: false,
-			error:
-				"Esta ferramenta tem pedidos e não pode ser excluída. Oculte-a do site (visibilidade) em vez disso.",
-		};
+	const decision = resolveToolDeletion(await fetchToolDeletionFacts(id));
+	if (!decision.allowed) {
+		return { ok: false, error: decision.reason };
 	}
 
 	try {
@@ -532,6 +526,43 @@ export async function deleteTool(id: string): Promise<ActionResult> {
 		targetId: id,
 		targetType: "tool",
 		metadata: { name: toolRow?.name },
+	});
+	revalidatePath(TOOLS_PATH);
+	revalidatePath(`${TOOLS_PATH}/${id}`);
+	return { ok: true, data: undefined };
+}
+
+/**
+ * Arquiva a ferramenta: sai do catálogo ativo e da vitrine, mas nada é
+ * destruído. É a saída oferecida quando a exclusão está bloqueada (pedido,
+ * avaliação ou estoque). Guardada por `tools.update` e não `tools.delete`
+ * porque não destrói dado — `admin` também arquiva.
+ *
+ * NÃO mexe em estoque: quantidade é dado físico e zerar sem movimento de ajuste
+ * deixaria buraco no ledger (mesma razão do guard de exclusão de variante, #335).
+ */
+export async function archiveTool(id: string): Promise<ActionResult> {
+	const session = await requireCapability("tools.update");
+
+	try {
+		await db
+			.update(tool)
+			.set({
+				status: "discontinued",
+				visibleOnSite: false,
+				updatedAt: new Date(),
+			})
+			.where(eq(tool.id, id));
+	} catch (error) {
+		logger.error("archiveTool falhou", error);
+		return { ok: false, error: actionErrorMessage(error) };
+	}
+
+	await logUserActivity({
+		actorUserId: session.user.id,
+		action: "tool.archived",
+		targetId: id,
+		targetType: "tool",
 	});
 	revalidatePath(TOOLS_PATH);
 	revalidatePath(`${TOOLS_PATH}/${id}`);

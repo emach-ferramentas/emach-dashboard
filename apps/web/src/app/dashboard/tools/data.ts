@@ -6,6 +6,10 @@ import {
 	attributeDefinition,
 } from "@emach/db/schema/attributes";
 import { toolCategory } from "@emach/db/schema/categories";
+import { stockLevel } from "@emach/db/schema/inventory";
+import { orderItem } from "@emach/db/schema/orders";
+import { review } from "@emach/db/schema/reviews";
+import { toolVariant } from "@emach/db/schema/tools";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { ToolCardData } from "@/app/dashboard/_components/tool-card";
 import { branchAndFilter, getUserBranchScope } from "@/lib/branch-scope";
@@ -18,6 +22,10 @@ import {
 } from "../categories/_lib/category-completeness";
 import { getEffectiveAttributeCount } from "../categories/_lib/effective-attributes";
 import type { ToolStatusValue } from "./_components/tool-schema";
+import {
+	ARCHIVED_TOOL_STATUS,
+	resolveToolStatusFilter,
+} from "./_lib/tool-query-helpers";
 
 export type ToolSort = "newest" | "name";
 export type ToolsListMode = "catalog" | "repor" | "esgotado";
@@ -119,15 +127,15 @@ export function buildToolsWhereClause(
 	} else if (filters.visible === "false") {
 		whereParts.push(sql`t.visible_on_site = false`);
 	}
-	if (filters.status) {
-		const statuses = filters.status.split(",").filter(Boolean);
-		if (statuses.length > 0) {
-			const placeholders = sql.join(
-				statuses.map((s) => sql`${s}`),
-				sql`, `
-			);
-			whereParts.push(sql`t.status IN (${placeholders})`);
-		}
+	const statusFilter = resolveToolStatusFilter(filters.status);
+	if (statusFilter.kind === "in") {
+		const placeholders = sql.join(
+			statusFilter.statuses.map((s) => sql`${s}`),
+			sql`, `
+		);
+		whereParts.push(sql`t.status IN (${placeholders})`);
+	} else {
+		whereParts.push(sql`t.status <> ${ARCHIVED_TOOL_STATUS}`);
 	}
 	if (filters.ncm) {
 		whereParts.push(sql`t.ncm ILIKE ${`${filters.ncm}%`}`);
@@ -275,4 +283,49 @@ export async function fetchToolsPage({
 						id: last.id,
 					}
 	);
+}
+
+export interface ToolDeletionFacts {
+	orderCount: number;
+	reviewCount: number;
+	stockBranchCount: number;
+	stockQty: number;
+}
+
+/**
+ * Fatos que governam a exclusão de uma ferramenta. SEM branch-scope de
+ * propósito: o bloqueio do servidor é global (mesma razão documentada em
+ * `[id]/_lib/tool-detail-data.ts` para `stockedVariantIds`) — escopar aqui faria
+ * a UI prometer uma exclusão que o servidor recusa.
+ */
+export async function fetchToolDeletionFacts(
+	toolId: string
+): Promise<ToolDeletionFacts> {
+	const [orders, reviews, stock] = await Promise.all([
+		db
+			// Pedidos distintos, não linhas de order_item — um pedido com 3 itens da ferramenta conta 1.
+			.select({ n: sql<number>`count(distinct ${orderItem.orderId})::int` })
+			.from(orderItem)
+			.innerJoin(toolVariant, eq(toolVariant.id, orderItem.variantId))
+			.where(eq(toolVariant.toolId, toolId)),
+		db
+			.select({ n: sql<number>`count(*)::int` })
+			.from(review)
+			.where(eq(review.toolId, toolId)),
+		db
+			.select({
+				qty: sql<number>`coalesce(sum(${stockLevel.quantity}), 0)::int`,
+				branches: sql<number>`count(distinct ${stockLevel.branchId}) filter (where ${stockLevel.quantity} > 0)::int`,
+			})
+			.from(stockLevel)
+			.innerJoin(toolVariant, eq(toolVariant.id, stockLevel.variantId))
+			.where(eq(toolVariant.toolId, toolId)),
+	]);
+
+	return {
+		orderCount: orders[0]?.n ?? 0,
+		reviewCount: reviews[0]?.n ?? 0,
+		stockQty: stock[0]?.qty ?? 0,
+		stockBranchCount: stock[0]?.branches ?? 0,
+	};
 }

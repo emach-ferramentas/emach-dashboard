@@ -39,13 +39,16 @@ import {
 	setVariantVisibility,
 	updateToolVariant,
 } from "../../actions";
+import type { ToolDeletionFacts } from "../../data";
 import type { ToolDetailVariant } from "../_lib/tool-detail-data";
 import { BarcodePopover } from "./barcode-popover";
 
 interface VariantsTabProps {
 	canDelete: boolean;
 	canMutate: boolean;
+	deletionFacts: ToolDeletionFacts;
 	highlightVariantId?: string;
+	isArchived: boolean;
 	orderedVariantIds: string[];
 	stockedVariantIds: string[];
 	toolId: string;
@@ -84,7 +87,9 @@ export function VariantsTab({
 	toolName,
 	canMutate,
 	canDelete,
+	deletionFacts,
 	highlightVariantId,
+	isArchived,
 	orderedVariantIds,
 	stockedVariantIds,
 }: VariantsTabProps) {
@@ -107,7 +112,6 @@ export function VariantsTab({
 
 	const orderedSet = new Set(orderedVariantIds);
 	const stockedSet = new Set(stockedVariantIds);
-	const toolHasOrders = orderedVariantIds.length > 0;
 
 	return (
 		<TooltipProvider delay={200}>
@@ -140,27 +144,25 @@ export function VariantsTab({
 					</TableBody>
 				</Table>
 
-				{canDelete && (
+				{(canMutate || canDelete) && (
 					<div className="rounded-[10px] border border-destructive/40 bg-destructive/5 p-4">
 						<div className="flex flex-wrap items-center justify-between gap-3">
 							<div>
 								<p className="font-medium text-destructive text-sm">
-									Excluir ferramenta
+									{canDelete ? "Excluir ferramenta" : "Arquivar ferramenta"}
 								</p>
 								<p className="text-muted-foreground text-xs">
-									Remove a ferramenta e todas as variantes. Não pode ser
-									desfeito.
+									{canDelete
+										? "Remove a ferramenta e todas as variantes. Não pode ser desfeito."
+										: "Tira a ferramenta da listagem e do site. Nada é perdido."}
 								</p>
 							</div>
 							<DeleteToolDialog
-								disabledReason={
-									toolHasOrders
-										? "Esta ferramenta tem pedidos e não pode ser excluída. Oculte-a do site."
-										: null
-								}
+								canDelete={canDelete}
+								facts={deletionFacts}
+								isArchived={isArchived}
 								toolId={toolId}
 								toolName={toolName}
-								triggerLabel="Excluir ferramenta"
 							/>
 						</div>
 					</div>
@@ -397,13 +399,23 @@ function EditableRow({
 function DisabledDeleteIcon({ reason }: { reason: string }) {
 	return (
 		<Tooltip>
+			{/* O trigger é o <span>, não o botão: elemento `disabled` não emite
+			    eventos de ponteiro e o tooltip nunca abriria. */}
 			<TooltipTrigger
 				render={
-					<Button disabled size="icon-sm" variant="ghost">
-						<Lock aria-hidden className="size-3.5 text-muted-foreground" />
-					</Button>
+					<span
+						aria-label={reason}
+						className="inline-flex"
+						role="note"
+						// biome-ignore lint/a11y/noNoninteractiveTabindex: span é o único jeito de tornar o motivo do cadeado alcançável por teclado sem tirar o disabled do botão real
+						tabIndex={0}
+					/>
 				}
-			/>
+			>
+				<Button disabled size="icon-sm" variant="ghost">
+					<Lock aria-hidden className="size-3.5 text-muted-foreground" />
+				</Button>
+			</TooltipTrigger>
 			<TooltipContent>{reason}</TooltipContent>
 		</Tooltip>
 	);

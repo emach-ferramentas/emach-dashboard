@@ -13,101 +13,75 @@ import {
 } from "@emach/ui/components/alert-dialog";
 import { Button } from "@emach/ui/components/button";
 import { Spinner } from "@emach/ui/components/spinner";
-import {
-	Tooltip,
-	TooltipContent,
-	TooltipProvider,
-	TooltipTrigger,
-} from "@emach/ui/components/tooltip";
-import { Trash2 } from "lucide-react";
+import { Archive, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { notify } from "@/lib/notify";
-
-import { deleteTool } from "../actions";
+import { resolveToolDeletion } from "../_lib/tool-deletion";
+import { archiveTool, deleteTool } from "../actions";
+import type { ToolDeletionFacts } from "../data";
 
 interface DeleteToolDialogProps {
-	disabledReason?: string | null;
+	canDelete: boolean;
+	facts: ToolDeletionFacts;
+	isArchived: boolean;
 	toolId: string;
 	toolName: string;
-	triggerLabel?: string;
 }
 
-export function DeleteToolDialog({
+function buildStockNote(facts: ToolDeletionFacts): string | null {
+	if (facts.stockQty <= 0) {
+		return null;
+	}
+	const unit = facts.stockBranchCount > 1 ? "filiais" : "filial";
+	return `Ainda há ${facts.stockQty} un em ${facts.stockBranchCount} ${unit} — o estoque não será alterado.`;
+}
+
+/** Trigger + dialog para papéis com `tools.update` mas sem `tools.delete` (admin): só arquivar. */
+function ArchiveOnlyDialog({
+	facts,
 	toolId,
 	toolName,
-	triggerLabel,
-	disabledReason,
-}: DeleteToolDialogProps) {
+}: {
+	facts: ToolDeletionFacts;
+	toolId: string;
+	toolName: string;
+}) {
 	const router = useRouter();
 	const [open, setOpen] = useState(false);
 	const [isPending, startTransition] = useTransition();
 
-	function handleConfirm() {
+	function handleArchive() {
 		startTransition(async () => {
-			const result = await deleteTool(toolId);
+			const result = await archiveTool(toolId);
 			if (result.ok) {
-				notify.success("Ferramenta removida");
+				notify.success("Ferramenta arquivada");
 				setOpen(false);
-				router.push("/dashboard/tools");
 				router.refresh();
-			} else {
-				const message =
-					"error" in result
-						? result.error
-						: "Não foi possível remover a ferramenta";
-				notify.error(message);
+				return;
 			}
+			notify.error(result.error);
 		});
 	}
 
-	const triggerContent = triggerLabel ? (
-		<>
-			<Trash2 aria-hidden className="mr-1.5 size-3.5" />
-			{triggerLabel}
-		</>
-	) : (
-		<Trash2 aria-hidden className="size-3.5" />
-	);
-
-	if (disabledReason) {
-		return (
-			<TooltipProvider delay={200}>
-				<Tooltip>
-					<TooltipTrigger
-						render={
-							<Button disabled size="sm" variant="outline">
-								{triggerContent}
-							</Button>
-						}
-					/>
-					<TooltipContent>{disabledReason}</TooltipContent>
-				</Tooltip>
-			</TooltipProvider>
-		);
-	}
-
-	const triggerButton = triggerLabel ? (
-		<Button size="sm" variant="outline" />
-	) : (
-		<Button size="icon-sm" variant="destructive" />
-	);
+	const stockNote = buildStockNote(facts);
 
 	return (
 		<AlertDialog onOpenChange={setOpen} open={open}>
 			<AlertDialogTrigger
-				aria-label={`Remover ferramenta ${toolName}`}
-				render={triggerButton}
+				aria-label={`Arquivar ferramenta ${toolName}`}
+				render={<Button size="sm" variant="outline" />}
 			>
-				{triggerContent}
+				<Archive aria-hidden className="mr-1.5 size-3.5" />
+				Arquivar ferramenta
 			</AlertDialogTrigger>
 			<AlertDialogContent>
 				<AlertDialogHeader>
-					<AlertDialogTitle>Remover ferramenta?</AlertDialogTitle>
+					<AlertDialogTitle>Arquivar ferramenta?</AlertDialogTitle>
 					<AlertDialogDescription>
-						Esta ação não pode ser desfeita. A ferramenta{" "}
-						<strong>{toolName}</strong> será removida permanentemente do sistema
-						e seus estoques por filial também.
+						A ferramenta <strong>{toolName}</strong> sai da listagem e do site.
+						Nada é perdido.
+						{stockNote ? ` ${stockNote}` : ""}
 					</AlertDialogDescription>
 				</AlertDialogHeader>
 				<AlertDialogFooter>
@@ -116,19 +90,171 @@ export function DeleteToolDialog({
 						disabled={isPending}
 						onClick={(e) => {
 							e.preventDefault();
-							handleConfirm();
+							handleArchive();
 						}}
 					>
 						{isPending ? (
 							<>
-								<Spinner /> Removendo…
+								<Spinner /> Arquivando…
 							</>
 						) : (
-							"Remover"
+							"Arquivar"
 						)}
 					</AlertDialogAction>
 				</AlertDialogFooter>
 			</AlertDialogContent>
 		</AlertDialog>
+	);
+}
+
+/** Trigger + dialog para `tools.delete` (super_admin): exclusão, com fallback pra arquivar quando bloqueada. */
+function ToolDeletionDialog({
+	facts,
+	isArchived,
+	toolId,
+	toolName,
+}: {
+	facts: ToolDeletionFacts;
+	isArchived: boolean;
+	toolId: string;
+	toolName: string;
+}) {
+	const router = useRouter();
+	const [open, setOpen] = useState(false);
+	const [isPending, startTransition] = useTransition();
+	const decision = resolveToolDeletion(facts);
+
+	function handleDelete() {
+		startTransition(async () => {
+			const result = await deleteTool(toolId);
+			if (result.ok) {
+				notify.success("Ferramenta removida");
+				setOpen(false);
+				router.push("/dashboard/tools");
+				router.refresh();
+				return;
+			}
+			notify.error(result.error);
+		});
+	}
+
+	function handleArchive() {
+		startTransition(async () => {
+			const result = await archiveTool(toolId);
+			if (result.ok) {
+				notify.success("Ferramenta arquivada");
+				setOpen(false);
+				router.refresh();
+				return;
+			}
+			notify.error(result.error);
+		});
+	}
+
+	const stockNote = buildStockNote(facts);
+
+	return (
+		<AlertDialog onOpenChange={setOpen} open={open}>
+			<AlertDialogTrigger
+				aria-label={`Excluir ferramenta ${toolName}`}
+				render={<Button size="sm" variant="outline" />}
+			>
+				<Trash2 aria-hidden className="mr-1.5 size-3.5" />
+				Excluir ferramenta
+			</AlertDialogTrigger>
+			<AlertDialogContent>
+				{decision.allowed ? (
+					<>
+						<AlertDialogHeader>
+							<AlertDialogTitle>Remover ferramenta?</AlertDialogTitle>
+							<AlertDialogDescription>
+								Esta ação não pode ser desfeita. A ferramenta{" "}
+								<strong>{toolName}</strong> será removida permanentemente do
+								sistema.
+							</AlertDialogDescription>
+						</AlertDialogHeader>
+						<AlertDialogFooter>
+							<AlertDialogCancel disabled={isPending}>
+								Cancelar
+							</AlertDialogCancel>
+							<AlertDialogAction
+								disabled={isPending}
+								onClick={(e) => {
+									e.preventDefault();
+									handleDelete();
+								}}
+								variant="destructive"
+							>
+								{isPending ? (
+									<>
+										<Spinner /> Removendo…
+									</>
+								) : (
+									"Remover"
+								)}
+							</AlertDialogAction>
+						</AlertDialogFooter>
+					</>
+				) : (
+					<>
+						<AlertDialogHeader>
+							<AlertDialogTitle>Não é possível excluir</AlertDialogTitle>
+							<AlertDialogDescription>
+								{decision.reason}
+								{isArchived
+									? " Esta ferramenta já está arquivada."
+									: " Você pode arquivá-la: ela sai da listagem e do site, e nada é perdido."}
+								{stockNote ? ` ${stockNote}` : ""}
+							</AlertDialogDescription>
+						</AlertDialogHeader>
+						<AlertDialogFooter>
+							<AlertDialogCancel disabled={isPending}>Fechar</AlertDialogCancel>
+							{decision.suggestArchive && !isArchived ? (
+								<AlertDialogAction
+									disabled={isPending}
+									onClick={(e) => {
+										e.preventDefault();
+										handleArchive();
+									}}
+								>
+									{isPending ? (
+										<>
+											<Spinner /> Arquivando…
+										</>
+									) : (
+										<>
+											<Archive aria-hidden className="mr-1.5 size-3.5" />
+											Arquivar ferramenta
+										</>
+									)}
+								</AlertDialogAction>
+							) : null}
+						</AlertDialogFooter>
+					</>
+				)}
+			</AlertDialogContent>
+		</AlertDialog>
+	);
+}
+
+export function DeleteToolDialog({
+	canDelete,
+	facts,
+	isArchived,
+	toolId,
+	toolName,
+}: DeleteToolDialogProps) {
+	if (!canDelete) {
+		return (
+			<ArchiveOnlyDialog facts={facts} toolId={toolId} toolName={toolName} />
+		);
+	}
+	return (
+		<ToolDeletionDialog
+			facts={facts}
+			isArchived={isArchived}
+			toolId={toolId}
+			toolName={toolName}
+		/>
 	);
 }
