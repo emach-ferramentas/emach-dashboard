@@ -1,23 +1,10 @@
 import type { Mask } from "./index";
+import { parseLocaleNumber } from "./parse-decimal";
+
+const NON_NUMERIC = /[^\d.,]/g;
 
 function sanitizeDecimal(display: string): string {
-	let cleaned = display.replace(/\./g, ",").replace(/[^\d,]/g, "");
-	const firstComma = cleaned.indexOf(",");
-	if (firstComma >= 0) {
-		cleaned =
-			cleaned.slice(0, firstComma + 1) +
-			cleaned.slice(firstComma + 1).replace(/,/g, "");
-	}
-	return cleaned;
-}
-
-function parseDecimalDisplay(display: string): number | undefined {
-	const cleaned = sanitizeDecimal(display).replace(",", ".");
-	if (!cleaned || cleaned === ".") {
-		return;
-	}
-	const n = Number(cleaned);
-	return Number.isNaN(n) ? undefined : n;
+	return display.replace(NON_NUMERIC, "");
 }
 
 function formatDecimal(raw: number | undefined): string {
@@ -27,10 +14,22 @@ function formatDecimal(raw: number | undefined): string {
 	return String(raw).replace(".", ",");
 }
 
-export const decimalMask: Mask<number> = {
-	format: formatDecimal,
-	parse: parseDecimalDisplay,
-	sanitize: sanitizeDecimal,
-	inputMode: "decimal",
-	placeholder: "Ex: 2,5",
-};
+/** Máscara decimal parametrizada pela precisão (escala) da coluna numeric de destino. */
+function createDecimalMask(maxFractionDigits: number): Mask<number> {
+	return {
+		format: formatDecimal,
+		parse: (display: string) => parseLocaleNumber(display, maxFractionDigits),
+		sanitize: sanitizeDecimal,
+		inputMode: "decimal",
+		placeholder: "Ex: 2,5",
+	};
+}
+
+/** Peso: tool.weight_kg/packaging_weight_kg, shipping_box.max_weight_kg/tare_weight_kg — numeric(10,3). */
+export const decimalMask: Mask<number> = createDecimalMask(3);
+
+/** Dimensões: tool.length_cm/width_cm/height_cm, shipping_box.internal_length_cm/internal_width_cm/internal_height_cm — numeric(10,2). */
+export const dimensionMask: Mask<number> = createDecimalMask(2);
+
+/** Specs numéricas de atributo: attribute_value.value_numeric/value_numeric_max — numeric(14,4). */
+export const specNumberMask: Mask<number> = createDecimalMask(4);
