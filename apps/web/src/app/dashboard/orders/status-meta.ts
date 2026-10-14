@@ -1,6 +1,9 @@
 export type { OrderStatus } from "@emach/db/schema/orders";
 
-import type { OrderStatus as DbOrderStatus } from "@emach/db/schema/orders";
+import type {
+	OrderStatus as DbOrderStatus,
+	RefundStatus,
+} from "@emach/db/schema/orders";
 import type { StatusIconKey, Tone } from "@/components/status-visual";
 
 // Tab default ao abrir /dashboard/orders (fila de entrada: pagos aguardando
@@ -190,3 +193,11 @@ export const ORDER_STATUS_LABELS: Record<DbOrderStatus, string> =
 			meta.label,
 		])
 	) as Record<DbOrderStatus, string>;
+
+export const REFUND_STATUS_LABELS = {
+	requested: "Solicitado",
+	under_review: "Em análise",
+	approved: "Aprovado",
+	refunded: "Reembolsado",
+	rejected: "Rejeitado",
+} as const satisfies Record<RefundStatus, string>;
