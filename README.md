@@ -36,6 +36,8 @@ bun db:sync                                  # drizzle-kit push + triggers + RLS
 # ⛔ não rode db:seed-demo: o banco é único (dev = prod), e o seed trunca tudo
 ```
 
+O banco é um só para dev, produção, dashboard e ecommerce. O que pede autorização e o que conta como write pontual está em [Banco compartilhado: regra de escrita dos dois apps](CLAUDE.md#banco-compartilhado-regra-de-escrita-dos-dois-apps).
+
 Servidor de desenvolvimento:
 
 ```bash
@@ -103,6 +105,8 @@ emach-dashboard/
 ```
 
 ## Available Scripts
+
+Os scripts que mudam schema (`db:sync`, `db:push`, `db:apply-sql`) e os marcados com ⛔, que apagam ou repopulam em massa, pedem autorização explícita pela regra de [Banco compartilhado: regra de escrita dos dois apps](CLAUDE.md#banco-compartilhado-regra-de-escrita-dos-dois-apps).
 
 | Script                                              | Função                                                                    |
 | --------------------------------------------------- | ------------------------------------------------------------------------- |
