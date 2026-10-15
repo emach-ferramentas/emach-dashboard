@@ -31,8 +31,21 @@ ast_grep_self_test() {
 	}
 }
 
+# Os testes das regras emach rodam os .test.ts direto no Node (type stripping), porque
+# o RuleTester do oxlint não roda no Bun. O ci.yml instala o Node 24 antes do verify.
+lint_rules_test() {
+	local major
+	major=$(node -p 'process.versions.node.split(".")[0]')
+	((major >= 24)) || {
+		echo "test:lint-rules exige Node 24 ou superior; achou $(node --version)" >&2
+		return 1
+	}
+	bun run test:lint-rules
+}
+
 gate check-types bun check-types
 gate check bun check
+gate test:lint-rules lint_rules_test
 gate check:docs bun run check:docs
 gate ruff uvx ruff@0.16.10 check .
 gate guard:forms bun guard:forms

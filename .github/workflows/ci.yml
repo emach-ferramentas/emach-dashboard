@@ -21,6 +21,13 @@ jobs:
       - name: Install dependencies
         run: bun install
 
+      # O gate test:lint-rules do scripts/verify.sh roda os .test.ts direto no Node
+      # (type stripping), com a mesma versão do CI do ecommerce.
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
       - name: Setup uv
         uses: astral-sh/setup-uv@v10.2.0
 
