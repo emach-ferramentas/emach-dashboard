@@ -8,7 +8,7 @@ capped="$root/scripts/run-capped.sh"
 src="$root/apps/web/src"
 tmp=$(mktemp -d)
 ignored="$root/packages/ui/src/hook-test-ignored.ts"
-trap 'rm -rf "$tmp" "$src"/hook-test-*.ts "$ignored"' EXIT
+trap 'rm -rf "$tmp" "$src"/hook-test-*.ts "$src"/hook-test-*.tsx "$ignored"' EXIT
 
 pass=0
 fail=0
@@ -90,6 +90,16 @@ check "autofix do anti-slop corrige calado" 0 "" "$spacing" -- bash "$hook"
 check "autofix põe a linha em branco" 0 "" "" -- grep -Pzq 'y = x \+ 1;\n\n\treturn' "$src/hook-test-spacing.ts"
 printf 'export const r = Reflect.apply(Math.max, undefined, [1, 2]);\n' > "$ignored"
 check "arquivo ignorado pelo .oxlintrc.json passa" 0 "" "{\"tool_input\":{\"file_path\":\"$ignored\"}}" -- bash "$hook"
+
+echo "anti-patterns em .tsx"
+async_client="$src/hook-test-async-client.tsx"
+printf '"use client";\nexport default async function Foo() {\n\tawait Promise.resolve();\n\treturn <div>x</div>;\n}\n' > "$async_client"
+check "componente async com use client volta pelo biome" 2 "noNextAsyncClientComponent" \
+	"{\"tool_input\":{\"file_path\":\"$async_client\"}}" -- bash "$hook"
+serif="$src/hook-test-serif.tsx"
+printf 'export function A() {\n\treturn <h2 className="font-serif">x</h2>;\n}\n' > "$serif"
+check "font-serif fora de h1 volta pelo ast-grep" 2 "display-font-only-h1" \
+	"{\"tool_input\":{\"file_path\":\"$serif\"}}" -- bash "$hook"
 
 echo "$pass ok, $fail falha(s)"
 [ "$fail" -eq 0 ]
